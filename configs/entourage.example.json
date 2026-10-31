@@ -1,0 +1,75 @@
+{
+  "repository": "/path/to/entourage",
+  "guide": "configs/entourage-guide.md",
+  "claude": "claude",
+  "node_bin": "/path/to/linux-node/bin",
+  "max_rounds": 4,
+  "min_review_rounds": 2,
+  "invocation_timeout_seconds": 3600,
+  "check_timeout_seconds": 180,
+  "checks": [
+    {
+      "name": "server-tests",
+      "cwd": "server",
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-q"
+      ]
+    },
+    {
+      "name": "client-tests",
+      "cwd": ".",
+      "argv": [
+        "node",
+        "--test",
+        "tests/browser-boundaries.test.cjs",
+        "tests/conversation.test.cjs",
+        "tests/markdown.test.cjs",
+        "tests/server-chat-display.test.cjs",
+        "tests/server-client.test.cjs",
+        "tests/server-model-refresh.test.cjs",
+        "tests/web-search.test.cjs"
+      ]
+    },
+    {
+      "name": "lint",
+      "cwd": ".",
+      "argv": [
+        "node",
+        "node_modules/expo/bin/cli",
+        "lint"
+      ]
+    },
+    {
+      "name": "typecheck",
+      "cwd": ".",
+      "argv": [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "--noEmit"
+      ]
+    }
+  ],
+  "environment_file": "~/.bashrc",
+  "environment_keys": [
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_MODEL"
+  ],
+  "acceptance_checks": [
+    {
+      "name": "task-acceptance",
+      "cwd": "server",
+      "argv": [
+        ".venv/bin/python",
+        "-c",
+        "import runpy; runpy.run_path('/path/to/ai-orchestrator/acceptance/entourage_body_limit.py')"
+      ]
+    }
+  ]
+}

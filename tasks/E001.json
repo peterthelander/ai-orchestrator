@@ -1,0 +1,23 @@
+{
+  "id": "E001",
+  "title": "Report the configured request body limit accurately",
+  "problem": "BodyLimit accepts max_bytes but its HTTP 413 message always says 1 MiB. A custom limit therefore reports an incorrect limit.",
+  "allowed_files": [
+    "server/entourage_server/body_limit.py",
+    "server/tests/test_body_limit.py"
+  ],
+  "acceptance_criteria": [
+    "The default limit preserves the existing public 1 MiB error wording and request_too_large code.",
+    "A custom limit of 8 bytes rejects 9 bytes and accurately reports the configured byte limit, without exposing the request contents.",
+    "Exactly max_bytes is accepted. Count bytes across multiple ASGI chunks, including multibyte UTF-8 input.",
+    "Rejection does not call the downstream app. Accepted chunks are replayed intact exactly once; disconnect behavior and non-body-method passthrough are preserved.",
+    "Add self-contained async middleware regression tests using synthetic input; no network or model calls."
+  ],
+  "exclusions": [
+    "No other middleware redesign, dependency updates, API changes, UI work, or existing-test edits."
+  ],
+  "required_changed_files": [
+    "server/entourage_server/body_limit.py",
+    "server/tests/test_body_limit.py"
+  ]
+}

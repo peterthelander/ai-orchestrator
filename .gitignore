@@ -1,0 +1,7 @@
+runs/
+__pycache__/
+*.pyc
+configs/entourage.json
+configs/*.local.json
+.env
+.env.*
