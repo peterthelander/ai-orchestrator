@@ -1,0 +1,150 @@
+{
+  "task": "E003",
+  "source": "Observed token_count counters in the current chat session log",
+  "scope": "Through pilot-end checkpoint; final response and any subsequent publishing work excluded",
+  "counter_interpretation": "Raw observed counters; no billing or subscription weighting assumed Published checkpoints are normalized to the comparison start; absolute counters remain local.",
+  "buckets": {
+    "shared_setup": {
+      "input_tokens": 1087806,
+      "cached_input_tokens": 1079936,
+      "output_tokens": 6316,
+      "total_tokens": 1094122,
+      "noncached_input_tokens": 7870,
+      "noncached_input_plus_output": 14186
+    },
+    "hybrid_orchestration_wait": {
+      "input_tokens": 845738,
+      "cached_input_tokens": 844672,
+      "output_tokens": 1786,
+      "total_tokens": 847524,
+      "noncached_input_tokens": 1066,
+      "noncached_input_plus_output": 2852
+    },
+    "hosted_implementation_verification": {
+      "input_tokens": 854967,
+      "cached_input_tokens": 852096,
+      "output_tokens": 3057,
+      "total_tokens": 858024,
+      "noncached_input_tokens": 2871,
+      "noncached_input_plus_output": 5928
+    },
+    "joint_result_assessment": {
+      "input_tokens": 288089,
+      "cached_input_tokens": 287744,
+      "output_tokens": 890,
+      "total_tokens": 288979,
+      "noncached_input_tokens": 345,
+      "noncached_input_plus_output": 1235
+    },
+    "measurement_reporting_overhead": {
+      "input_tokens": 590367,
+      "cached_input_tokens": 583936,
+      "output_tokens": 2333,
+      "total_tokens": 592700,
+      "noncached_input_tokens": 6431,
+      "noncached_input_plus_output": 8764
+    },
+    "total_pilot_through_report_checkpoint": {
+      "input_tokens": 3666967,
+      "cached_input_tokens": 3648384,
+      "output_tokens": 14382,
+      "total_tokens": 3681349,
+      "noncached_input_tokens": 18583,
+      "noncached_input_plus_output": 32965
+    },
+    "hybrid_execution_plus_conservative_joint_assessment": {
+      "input_tokens": 1133827,
+      "cached_input_tokens": 1132416,
+      "output_tokens": 2676,
+      "total_tokens": 1136503,
+      "noncached_input_tokens": 1411,
+      "noncached_input_plus_output": 4087
+    }
+  },
+  "checkpoints": {
+    "hybrid-start": {
+      "timestamp": "2026-11-01T08:33:48.125Z",
+      "ordinal": 1737,
+      "usage_since_comparison_start": {
+        "input_tokens": 1087806,
+        "cached_input_tokens": 1079936,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 6316,
+        "reasoning_output_tokens": 3694,
+        "total_tokens": 1094122
+      }
+    },
+    "hybrid-wait-end": {
+      "timestamp": "2026-11-01T09:08:29.709Z",
+      "ordinal": 1754,
+      "usage_since_comparison_start": {
+        "input_tokens": 1933544,
+        "cached_input_tokens": 1924608,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8102,
+        "reasoning_output_tokens": 4728,
+        "total_tokens": 1941646
+      }
+    },
+    "hosted-start": {
+      "timestamp": "2026-11-01T09:08:29.709Z",
+      "ordinal": 1754,
+      "usage_since_comparison_start": {
+        "input_tokens": 1933544,
+        "cached_input_tokens": 1924608,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8102,
+        "reasoning_output_tokens": 4728,
+        "total_tokens": 1941646
+      }
+    },
+    "hosted-final": {
+      "timestamp": "2026-11-01T09:09:18.287Z",
+      "ordinal": 1776,
+      "usage_since_comparison_start": {
+        "input_tokens": 2788511,
+        "cached_input_tokens": 2776704,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 11159,
+        "reasoning_output_tokens": 6162,
+        "total_tokens": 2799670
+      }
+    },
+    "hybrid-assessment-start": {
+      "timestamp": "2026-11-01T09:09:18.287Z",
+      "ordinal": 1776,
+      "usage_since_comparison_start": {
+        "input_tokens": 2788511,
+        "cached_input_tokens": 2776704,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 11159,
+        "reasoning_output_tokens": 6162,
+        "total_tokens": 2799670
+      }
+    },
+    "hybrid-assessment-end": {
+      "timestamp": "2026-11-01T09:09:30.208Z",
+      "ordinal": 1783,
+      "usage_since_comparison_start": {
+        "input_tokens": 3076600,
+        "cached_input_tokens": 3064448,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 12049,
+        "reasoning_output_tokens": 6431,
+        "total_tokens": 3088649
+      }
+    },
+    "pilot-end": {
+      "timestamp": "2026-11-01T09:10:08.039Z",
+      "ordinal": 1799,
+      "usage_since_comparison_start": {
+        "input_tokens": 3666967,
+        "cached_input_tokens": 3648384,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 14382,
+        "reasoning_output_tokens": 7336,
+        "total_tokens": 3681349
+      }
+    }
+  }
+}

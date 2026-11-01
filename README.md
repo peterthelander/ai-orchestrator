@@ -138,3 +138,5 @@ into an ignored local configuration and run:
 ```bash
 python3 runner.py --config configs/entourage-page.local.json --task tasks/E002-v2.json
 ```
+
+See [BENCHMARK-01.md](BENCHMARK-01.md) for the first hosted-only versus hybrid paired pilot and measured usage caveats.

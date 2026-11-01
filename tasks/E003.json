@@ -1,0 +1,23 @@
+{
+  "id": "E003",
+  "title": "Keep Unicode case-insensitive page search in original text coordinates",
+  "problem": "read_web_page computes find position in casefolded text but slices original text with that index. Case folding can expand characters. For plain text consisting of 600 sharp-s characters followed by NEEDLE, find=needle reports a match but starts the excerpt at 700 instead of 100, excluding the match.",
+  "allowed_files": [
+    "server/entourage_server/web_pages.py",
+    "server/tests/test_page_find_unicode.py"
+  ],
+  "required_changed_files": [
+    "server/entourage_server/web_pages.py",
+    "server/tests/test_page_find_unicode.py"
+  ],
+  "acceptance_criteria": [
+    "Case-insensitive find locates matches using Unicode casefold semantics while computing offset and excerpt in original text coordinates, retaining up to 500 original characters before the match.",
+    "Preserve expansion-aware matching (for example STRASSE matches Stra\u00dfe), first-match selection, and matches inside an expanded character; the original character containing the folded match is the start.",
+    "ASCII matching, no-match behavior, explicit offset pagination, and the existing 100000-character text bound and 8000-character excerpt size remain unchanged.",
+    "Add concise async standard-library unittest regression coverage using synthetic text, mock HTTP transport, and a stub resolver. No network or model calls.",
+    "Keep changes limited to search-coordinate calculation and one new test module. Preserve parser behavior, safe URL handling, DNS pinning, response shape, dependencies, and existing tests."
+  ],
+  "exclusions": [
+    "No UI changes, new dependencies, alternative search semantics, page-fetch redesign, or edits to other target files."
+  ]
+}
