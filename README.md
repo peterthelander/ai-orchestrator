@@ -1,4 +1,4 @@
-# Autonomous coding loop experiment
+# AI Orchestrator
 
 A small, local Claude Code experiment: one approved task, fresh implementer and
 reviewer invocations, independently executed checks, and a durable Markdown dialogue.
@@ -6,6 +6,37 @@ The runner uses the existing Claude configuration, including its local inference
 endpoint. The Entourage configuration reads only the three named literal
 `ANTHROPIC_*` exports from `~/.bashrc`; it never executes that file or copies
 credentials into artifacts. It does not select a hosted model or configure credentials.
+
+## Why this experiment exists
+
+Can a slower local coding model handle bounded implementation work while a
+separate deterministic runner owns scope, verification, and acceptance? This
+repository investigates that question through saved experiment protocols and
+results rather than assuming that model approval proves correctness.
+
+**Status:** active research tooling for trusted local use. Configuration is
+machine- and task-specific; this is not a general autonomous development service.
+
+```mermaid
+flowchart LR
+    Task["Approved task and frozen gates"] --> Baseline["Baseline checks"]
+    Baseline --> Implement["Fresh implementer context"]
+    Implement --> Check["Independent checks"]
+    Check --> Review["Fresh reviewer context"]
+    Review --> Decision["Runner accepts, retries, or stops"]
+    Decision --> Evidence["Saved reports and artifacts"]
+```
+
+## Evidence to read first
+
+- [First trial](EXPERIMENT.md): initial outcomes and observed review failures.
+- [Paired pilot](BENCHMARK-01.md): hosted-only versus hybrid workflow and usage caveats.
+- [Three-task batch](BENCHMARK-BATCH-02.md): accepted and unresolved outcomes, including
+  a reviewer rejecting valid work. The small sample does not establish general reliability.
+- [Strategy](STRATEGY.md): directions informed by the experiments.
+
+The [run instructions](#run) explain the dependencies and target-repository setup.
+You can run the runner's unit tests without launching a coding experiment.
 
 ## Artifacts
 
