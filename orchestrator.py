@@ -270,10 +270,22 @@ def resume(args):
 
 def install(args):
     codex_home = Path(args.codex_home or os.environ.get('CODEX_HOME', '~/.codex')).expanduser().resolve()
-    target = codex_home / 'skills' / 'local-coding-loop'
+    skills_dir = Path(args.skills_dir).expanduser().resolve() if args.skills_dir else codex_home / 'skills'
+    target = skills_dir / 'local-coding-loop'
+    copy_install = args.copy or (str(skills_dir).startswith('/mnt/') and len(skills_dir.parts) > 2 and len(skills_dir.parts[2]) == 1)
     source = ROOT / 'skills' / 'local-coding-loop'
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.is_symlink() and target.resolve() == source:
+    owned_link = target.is_symlink() and target.resolve() == source
+    marker = target / 'installation.json'
+    owned_copy = not target.is_symlink() and marker.is_file() and read(marker).get('checkout') == str(ROOT)
+    if copy_install:
+        if (target.exists() or target.is_symlink()) and not (owned_link or owned_copy):
+            raise ValueError('Skill path exists; will not overwrite: ' + str(target))
+        if owned_link:
+            target.unlink()
+        shutil.copytree(source, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
+        write(marker, {'checkout': str(ROOT), 'distribution': os.environ.get('WSL_DISTRO_NAME')})
+    elif owned_link:
         pass
     elif target.exists() or target.is_symlink():
         raise ValueError('Skill path exists; will not overwrite: ' + str(target))
@@ -313,7 +325,9 @@ def main():
     p = sub.add_parser('resume', help='Continue a parent_required run with a hosted parent decision')
     p.add_argument('run'); p.add_argument('--decision', required=True); p.set_defaults(func=resume)
     p = sub.add_parser('install', help='Link the Codex skill and install a small CLI launcher')
-    p.add_argument('--codex-home'); p.add_argument('--bin-dir', default='~/.local/bin'); p.set_defaults(func=install)
+    p.add_argument('--codex-home'); p.add_argument('--skills-dir', help='Explicit skill discovery directory')
+    p.add_argument('--copy', action='store_true', help='Install readable files with a checkout/WSL bridge; automatic on Windows-mounted paths')
+    p.add_argument('--bin-dir', default='~/.local/bin'); p.set_defaults(func=install)
     args = parser.parse_args()
     try:
         return args.func(args)

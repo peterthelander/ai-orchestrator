@@ -6,7 +6,14 @@ description: Delegate bounded coding tasks to the user's local Claude CLI with i
 # Local coding loop
 
 Use the bundled CLI via `python3 <this-skill>/scripts/orchestrator.py ...`.
-The installer links this skill to the maintained ai-orchestrator checkout.
+The installer links this skill to the maintained ai-orchestrator checkout, or
+installs readable copies when crossing Windows/WSL. For a copied installation,
+`installation.json` supplies the Linux checkout and WSL distribution. From a
+Windows shell, invoke `wsl.exe --distribution <distribution> --exec python3
+<checkout>/orchestrator.py ...` directly; Python on Windows is not required.
+Use Linux paths for repositories, tasks, decisions, and artifacts passed to WSL.
+If the local shell cannot start at all, report that execution blocker; do not
+infer that the skill is absent merely because a shell call failed.
 Read [workflow.md](references/workflow.md) for command examples, profile/task schemas,
 and parent decisions. Do not read historical experiment reports during ordinary use.
 

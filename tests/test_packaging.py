@@ -138,6 +138,26 @@ print(json.dumps({'type':'result'""")
                 with self.assertRaises(ValueError):
                     orchestrator.validate(dict(obj.config, invocation_timeout_seconds=10), dict(task, **change))
 
+    def test_copied_install_replaces_owned_link_and_preserves_unrelated_directories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            options = ['--codex-home', root / 'codex', '--bin-dir', root / 'bin']
+            self.cli(root / 'data', 'install', *options)
+            skill = root / 'codex/skills/local-coding-loop'
+            self.assertTrue(skill.is_symlink())
+            for _ in range(2):
+                self.cli(root / 'data', 'install', *options, '--copy')
+            self.assertFalse(skill.is_symlink())
+            self.assertEqual(orchestrator.read(skill / 'installation.json')['checkout'], str(runner.ROOT))
+            subprocess.run([sys.executable, str(skill / 'scripts/orchestrator.py'), '--help'],
+                           check=True, capture_output=True)
+            other = root / 'other/local-coding-loop'
+            other.mkdir(parents=True)
+            (other / 'keep.txt').write_text('unrelated')
+            self.cli(root / 'data', 'install', '--skills-dir', other.parent, '--copy',
+                     '--bin-dir', root / 'bin', code=1)
+            self.assertEqual((other / 'keep.txt').read_text(), 'unrelated')
+
     def test_install_is_idempotent_and_runs_from_skill_symlink(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

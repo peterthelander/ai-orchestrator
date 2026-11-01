@@ -14,7 +14,7 @@ From this maintained checkout:
 python3 orchestrator.py install
 ```
 
-This links the `local-coding-loop` skill into `$CODEX_HOME/skills` (or
+This installs the `local-coding-loop` skill into `$CODEX_HOME/skills` (or
 `~/.codex/skills`) and installs `~/.local/bin/ai-orchestrator`. It does not overwrite
 unrelated installations. Keep this checkout in place; updates apply to the linked
 skill and launcher. Add `~/.local/bin` to PATH if needed, and open a new Codex
@@ -28,6 +28,14 @@ Codex prepares a reusable repository profile and a small task. The local model
 implements and reviews while Codex waits for completion. Unresolved disputes get
 one fresh local adjudication, then a saved parent packet. Codex can record a
 per-finding decision and resume without waiving mandatory checks.
+
+On Windows/WSL, a Linux symlink inside a Windows directory may be unreadable to
+Windows Codex. The installer automatically uses physical skill files for `/mnt/c`
+style destinations, with a WSL launcher pointing back to the maintained checkout.
+Use `--skills-dir /path/to/.agents/skills` for an explicit discovery directory, or
+`--copy` to request physical files. Rerun installation after updating copied skills.
+A session whose local shell cannot start must have that execution issue resolved
+before it can run the loop.
 
 ## Everyday commands
 

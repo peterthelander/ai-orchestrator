@@ -4,7 +4,9 @@ Use `ai-orchestrator` after installation, or
 `python3 <skill-directory>/scripts/orchestrator.py` with the same arguments.
 Python 3.12, Git, Linux/WSL, and the user's Claude CLI are required. The package
 uses only Python's standard library. Keep the maintained checkout in place;
-installation links to it instead of copying a second version.
+installation refers to it. Windows-mounted destinations get readable copies and
+a WSL bridge; rerun installation after updates. `install --skills-dir` can select
+an explicit `.agents/skills` directory, and `--copy` forces a copied installation.
 
 ## Repository onboarding
 
