@@ -1,0 +1,141 @@
+{
+  "scope": "Latest user agreed message through report-end checkpoint; final response and publishing excluded",
+  "source": "Observed local token_count events, normalized to this batch start",
+  "buckets": {
+    "shared_setup": {
+      "input_tokens": 1252369,
+      "cached_input_tokens": 1242112,
+      "output_tokens": 6631,
+      "total_tokens": 1259000,
+      "noncached_input_tokens": 10257,
+      "noncached_input_plus_output": 16888
+    },
+    "hybrid_orchestration_wait": {
+      "input_tokens": 974748,
+      "cached_input_tokens": 973952,
+      "output_tokens": 1489,
+      "total_tokens": 976237,
+      "noncached_input_tokens": 796,
+      "noncached_input_plus_output": 2285
+    },
+    "hosted_implementation_verification": {
+      "input_tokens": 983335,
+      "cached_input_tokens": 973056,
+      "output_tokens": 3589,
+      "total_tokens": 986924,
+      "noncached_input_tokens": 10279,
+      "noncached_input_plus_output": 13868
+    },
+    "joint_assessment": {
+      "input_tokens": 329688,
+      "cached_input_tokens": 329088,
+      "output_tokens": 1070,
+      "total_tokens": 330758,
+      "noncached_input_tokens": 600,
+      "noncached_input_plus_output": 1670
+    },
+    "hybrid_execution_plus_assessment": {
+      "input_tokens": 1304436,
+      "cached_input_tokens": 1303040,
+      "output_tokens": 2559,
+      "total_tokens": 1306995,
+      "noncached_input_tokens": 1396,
+      "noncached_input_plus_output": 3955
+    },
+    "post_batch_diagnosis_maintenance_reporting": {
+      "input_tokens": 1008222,
+      "cached_input_tokens": 1004160,
+      "output_tokens": 8814,
+      "total_tokens": 1017036,
+      "noncached_input_tokens": 4062,
+      "noncached_input_plus_output": 12876
+    },
+    "total_through_report_checkpoint": {
+      "input_tokens": 4548362,
+      "cached_input_tokens": 4522368,
+      "output_tokens": 21593,
+      "total_tokens": 4569955,
+      "noncached_input_tokens": 25994,
+      "noncached_input_plus_output": 47587
+    }
+  },
+  "checkpoints": {
+    "hybrid-start": {
+      "timestamp": "2026-11-01T11:37:55.642Z",
+      "usage_since_batch_start": {
+        "input_tokens": 1252369,
+        "cached_input_tokens": 1242112,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 6631,
+        "reasoning_output_tokens": 3205,
+        "total_tokens": 1259000
+      }
+    },
+    "hybrid-wait-end": {
+      "timestamp": "2026-11-01T12:38:24.497Z",
+      "usage_since_batch_start": {
+        "input_tokens": 2227117,
+        "cached_input_tokens": 2216064,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8120,
+        "reasoning_output_tokens": 4235,
+        "total_tokens": 2235237
+      }
+    },
+    "hosted-start": {
+      "timestamp": "2026-11-01T12:38:24.497Z",
+      "usage_since_batch_start": {
+        "input_tokens": 2227117,
+        "cached_input_tokens": 2216064,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8120,
+        "reasoning_output_tokens": 4235,
+        "total_tokens": 2235237
+      }
+    },
+    "hosted-final": {
+      "timestamp": "2026-11-01T12:39:38.144Z",
+      "usage_since_batch_start": {
+        "input_tokens": 3210452,
+        "cached_input_tokens": 3189120,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 11709,
+        "reasoning_output_tokens": 5267,
+        "total_tokens": 3222161
+      }
+    },
+    "assessment-start": {
+      "timestamp": "2026-11-01T12:39:38.144Z",
+      "usage_since_batch_start": {
+        "input_tokens": 3210452,
+        "cached_input_tokens": 3189120,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 11709,
+        "reasoning_output_tokens": 5267,
+        "total_tokens": 3222161
+      }
+    },
+    "assessment-end": {
+      "timestamp": "2026-11-01T12:39:51.344Z",
+      "usage_since_batch_start": {
+        "input_tokens": 3540140,
+        "cached_input_tokens": 3518208,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 12779,
+        "reasoning_output_tokens": 5664,
+        "total_tokens": 3552919
+      }
+    },
+    "report-end": {
+      "timestamp": "2026-11-01T12:42:14.344Z",
+      "usage_since_batch_start": {
+        "input_tokens": 4548362,
+        "cached_input_tokens": 4522368,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 21593,
+        "reasoning_output_tokens": 10675,
+        "total_tokens": 4569955
+      }
+    }
+  }
+}

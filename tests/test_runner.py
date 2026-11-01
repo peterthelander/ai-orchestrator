@@ -283,5 +283,25 @@ class RunnerTests(unittest.TestCase):
                     runner.validate_review_evidence(review, repo, task)
 
 
+
+    def test_pending_review_gets_rebuttal_without_prior_verdict_narrative(self):
+        with tempfile.TemporaryDirectory() as temp:
+            obj = object.__new__(runner.Runner)
+            obj.repo = Path(temp)
+            (obj.repo / 'code.py').write_text('actual implementation\n')
+            obj.task = {'allowed_files': ['code.py']}
+            obj.config = {}
+            obj.latest_checks = []
+            obj.latest_implementation = 'R1 rejected: actual deterministic counterexample'
+            obj.latest_review = {'findings': [{'id': 'R1', 'issue': 'alleged defect'}],
+                                 'summary': 'PRIOR REVIEW NARRATIVE'}
+            text = obj.context('reviewer')
+            self.assertIn('R1 rejected: actual deterministic counterexample', text)
+            self.assertIn('Unverified implementer response', text)
+            self.assertNotIn('PRIOR REVIEW NARRATIVE', text)
+            obj.latest_review = {'findings': []}
+            self.assertNotIn('R1 rejected', obj.context('reviewer'))
+
+
 if __name__ == '__main__':
     unittest.main()

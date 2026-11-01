@@ -1,0 +1,21 @@
+{
+  "id": "E006",
+  "title": "Use original-text coordinates in Unicode memory excerpts",
+  "problem": "search_memories uses positions from casefolded text to slice original text. Unicode expansions before a keyword can yield an empty or unrelated excerpt despite a matching record.",
+  "allowed_files": [
+    "server/entourage_server/memory.py",
+    "server/tests/test_memory_unicode_excerpt.py"
+  ],
+  "required_changed_files": [
+    "server/entourage_server/memory.py",
+    "server/tests/test_memory_unicode_excerpt.py"
+  ],
+  "acceptance_criteria": [
+    "Keep Unicode casefold keyword matching while locating the earliest matching term in original text coordinates; a folded match inside an expanded character starts at that original character.",
+    "Excerpt starts at most 120 original characters before that hit and remains at most 500 original characters. Preserve first occurrence and earliest term regardless of keyword order.",
+    "Preserve ASCII search, no-match results, metadata, speaker/order/snapshot/pagination semantics and all existing tests. Add synthetic generated-journal unittest fixtures; no live data or network."
+  ],
+  "exclusions": [
+    "Only the described behavior and one new regression-test file. No dependency, UI, network, existing-test, or unrelated source changes."
+  ]
+}

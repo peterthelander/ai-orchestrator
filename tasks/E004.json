@@ -1,0 +1,21 @@
+{
+  "id": "E004",
+  "title": "Reject non-integer device timeouts",
+  "problem": "Settings accepts True, 1.5, NaN and infinity as device_timeout_seconds, while some other non-integers raise TypeError rather than the configuration validation ValueError.",
+  "allowed_files": [
+    "server/entourage_server/config.py",
+    "server/tests/test_timeout_type.py"
+  ],
+  "required_changed_files": [
+    "server/entourage_server/config.py",
+    "server/tests/test_timeout_type.py"
+  ],
+  "acceptance_criteria": [
+    "device_timeout_seconds must have exact type int (booleans are invalid) and be positive; reject non-integers and non-positive values with ValueError.",
+    "Preserve the default 120 and all positive integer values without adding an upper limit or coercing values.",
+    "Preserve all other Settings validation, defaults, and environment behavior; add concise standard-library unittest tests."
+  ],
+  "exclusions": [
+    "Only the described behavior and one new regression-test file. No dependency, UI, network, existing-test, or unrelated source changes."
+  ]
+}

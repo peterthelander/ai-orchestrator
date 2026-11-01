@@ -247,6 +247,7 @@ class Runner:
         if config.get('test_guide'):
             self.guide += '\n\n' + (ROOT / config['test_guide']).read_text()
         self.latest_review = {'findings': []}
+        self.latest_implementation = ''
         self.latest_checks = []
         self.review_attempt = 1
         self.control_files = [p for p in ROOT.rglob('*') if p.is_file()
@@ -258,6 +259,9 @@ class Runner:
 
     def context(self, persona):
         handoff = {'open_findings': self.latest_review.get('findings', []), 'checks': self.latest_checks}
+        if persona == 'reviewer' and handoff['open_findings']:
+            handoff['implementer_response_to_findings'] = getattr(self, 'latest_implementation', '')[:6000]
+            handoff['response_instruction'] = 'Unverified implementer response: check its evidence against source and deterministic results. Resolve rejected findings when the premise is false.'
         # Full dialogue remains available for audit, but prior verdicts and agent
         # narratives are not injected into a fresh review as presumed facts.
         value = 'CURRENT HANDOFF\n' + json.dumps(handoff, indent=2)
@@ -354,6 +358,7 @@ class Runner:
         review_count = 0
         for round_number in range(1, self.config['max_rounds'] + 1):
             report = self.invoke('implementer', round_number, 'Implement or address the latest review. Stop after this task.')
+            self.latest_implementation = report
             self.append(f'Round {round_number}: implementer', report)
             current_patch = patch(self.repo)
             (self.directory / f'round-{round_number}.patch').write_bytes(current_patch)

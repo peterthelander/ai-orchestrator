@@ -11,3 +11,5 @@ For request_changes, use verdict "request_changes" and findings containing:
 Include coverage for EVERY criterion in both verdicts. Approve only with no unresolved findings. Retain IDs for continuing findings. Reassess disputed findings from source; evidence-based rejection can resolve a finding without a code change. Prefer a concise review over repeating the task description.
 
 Keep output small: prefer ONE behavior-bearing citation per criterion (at most two if essential). Cite actual conditions or test assertions, not docstrings, imports, class declarations, or repeated generic loop lines. Choose IDs for actual assertions or conditions, never generic or blank lines. Use valid JSON. Include ALL acceptance criteria even when repairing invalid output.
+
+When the handoff includes an implementer response to open findings, assess its counterexample explicitly. A rejected finding needs to be re-evaluated, not simply repeated. Treat the response as a claim to verify; prior approval narratives remain excluded.

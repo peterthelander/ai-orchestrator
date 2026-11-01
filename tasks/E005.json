@@ -1,0 +1,21 @@
+{
+  "id": "E005",
+  "title": "Require canonical source-record event dates",
+  "problem": "validate_records accepts compact and ISO-week event_date strings even though records retain those noncanonical values and the related activity-period contract requires canonical YYYY-MM-DD. Non-string event dates can escape as TypeError.",
+  "allowed_files": [
+    "server/entourage_server/knowledge_contracts.py",
+    "server/tests/test_record_event_date.py"
+  ],
+  "required_changed_files": [
+    "server/entourage_server/knowledge_contracts.py",
+    "server/tests/test_record_event_date.py"
+  ],
+  "acceptance_criteria": [
+    "A supplied non-None event_date must be a string representing a real calendar date exactly in canonical YYYY-MM-DD format; compact and ISO-week forms are rejected.",
+    "Invalid types and invalid/noncanonical dates raise ValueError, including bool, numbers, lists and dictionaries; preserve absent and None event_date.",
+    "Preserve valid leap dates, by-ID return values, input immutability, other record/plan contracts, and all existing tests; add concise standard-library unittest tests."
+  ],
+  "exclusions": [
+    "Only the described behavior and one new regression-test file. No dependency, UI, network, existing-test, or unrelated source changes."
+  ]
+}
