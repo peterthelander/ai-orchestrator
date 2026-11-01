@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """One-task experiment runner. No model owns acceptance or runner state."""
 import argparse
+import copy
 from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import shlex
@@ -111,6 +113,112 @@ def parse_review(text):
     return review
 
 
+def validate_review_evidence(review, repo, task):
+    """Resolve unique exact quotes; preserve supplied lines as audit metadata.
+
+    Validate source anchors and criterion coverage, not the reviewer's reasoning.
+    Collect all errors so a single retry can address the entire output.
+    """
+    resolved = copy.deepcopy(review)
+    errors = []
+
+    def citations(items, location):
+        if not isinstance(items, list) or not items:
+            errors.append(location + ': source evidence is required')
+            return
+        for index, item in enumerate(items):
+            label = f'{location}[{index}]'
+            if not isinstance(item, dict):
+                errors.append(label + ': evidence must be an object')
+                continue
+            if 'anchor' in item:
+                anchor = item['anchor']
+                match = re.fullmatch(r'S([1-9][0-9]*):([1-9][0-9]*)', anchor) if isinstance(anchor, str) else None
+                if not match:
+                    errors.append(label + ': anchor must be a supplied source ID such as S1:20')
+                    continue
+                file_index, number = map(int, match.groups())
+                if file_index > len(task['allowed_files']):
+                    errors.append(label + ': source ID refers to an unknown file')
+                    continue
+                name = task['allowed_files'][file_index - 1]
+                path = (repo / name).resolve()
+                if not path.is_relative_to(repo.resolve()) or not path.is_file():
+                    errors.append(label + ': source ID file is unavailable or outside repository')
+                    continue
+                try:
+                    lines = path.read_text().splitlines()
+                except (OSError, UnicodeError) as error:
+                    errors.append(label + ': cannot read source ID file: ' + str(error))
+                    continue
+                if number > len(lines) or not lines[number - 1].strip():
+                    errors.append(label + ': source ID refers to a missing or blank line')
+                    continue
+                if 'file' in item and item['file'] != name:
+                    errors.append(label + ': supplied file contradicts source ID')
+                    continue
+                if 'quote' in item and (not isinstance(item['quote'], str) or item['quote'] not in lines[number - 1]):
+                    errors.append(label + ': supplied quote contradicts source ID')
+                    continue
+                if 'line' in item:
+                    item['model_line'] = item['line']
+                item.update(file=name, line=number, quote=lines[number - 1])
+                continue
+            name, quote = item.get('file'), item.get('quote')
+            if name not in task['allowed_files']:
+                errors.append(label + ': evidence requires an allowed file')
+                continue
+            if not isinstance(quote, str) or not quote.strip() or '\n' in quote or '\r' in quote:
+                errors.append(label + ': quote must be a nonempty exact single-line substring')
+                continue
+            path = (repo / name).resolve()
+            if not path.is_relative_to(repo.resolve()) or not path.is_file():
+                errors.append(label + ': evidence file is unavailable or outside repository')
+                continue
+            try:
+                lines = path.read_text().splitlines()
+            except (OSError, UnicodeError) as error:
+                errors.append(label + ': cannot read evidence file: ' + str(error))
+                continue
+            matches = [number for number, line in enumerate(lines, 1) if quote in line]
+            if not matches:
+                errors.append(label + ': exact quote not found in ' + name)
+            elif len(matches) > 1:
+                errors.append(label + ': ambiguous quote in ' + name + '; use a longer unique quote')
+            else:
+                if 'line' in item:
+                    item['model_line'] = item['line']
+                item['line'] = matches[0]
+
+    for index, finding in enumerate(resolved['findings']):
+        if not isinstance(finding.get('failure_case'), str) or not finding['failure_case'].strip():
+            errors.append(f'findings[{index}]: concrete failure_case is required')
+        citations(finding.get('evidence'), f'findings[{index}].evidence')
+    coverage = resolved.get('coverage')
+    if not isinstance(coverage, list):
+        errors.append('Review requires acceptance-criterion coverage')
+        coverage = []
+    expected = set(range(1, len(task['acceptance_criteria']) + 1))
+    seen = set()
+    for index, item in enumerate(coverage):
+        if not isinstance(item, dict):
+            errors.append(f'coverage[{index}]: coverage must be an object')
+            continue
+        criterion = item.get('criterion')
+        if type(criterion) is not int or criterion not in expected or criterion in seen:
+            errors.append(f'coverage[{index}]: criterion must be a unique integer from 1 to {len(expected)}')
+        else:
+            seen.add(criterion)
+        if not isinstance(item.get('reason'), str) or not item['reason'].strip():
+            errors.append(f'coverage[{index}]: reasoning is required')
+        citations(item.get('evidence'), f'coverage[{index}].evidence')
+    if seen != expected:
+        errors.append('Missing acceptance criteria: ' + ', '.join(map(str, sorted(expected - seen))))
+    if errors:
+        raise ValueError('Review validation errors:\n- ' + '\n- '.join(errors))
+    return resolved
+
+
 class Runner:
     def __init__(self, config, task, run_dir):
         self.config, self.task, self.directory = config, task, run_dir
@@ -136,9 +244,35 @@ class Runner:
         self.dialogue = self.directory / 'dialogue.md'
         self.dialogue.write_text('# ' + task['id'] + ': ' + task['title'] + '\n')
         self.guide = (ROOT / config['guide']).read_text()
+        if config.get('test_guide'):
+            self.guide += '\n\n' + (ROOT / config['test_guide']).read_text()
+        self.latest_review = {'findings': []}
+        self.latest_checks = []
+        self.review_attempt = 1
         self.control_files = [p for p in ROOT.rglob('*') if p.is_file()
                               and not any(part in ('runs', '__pycache__', '.git') for part in p.relative_to(ROOT).parts)]
         self.controls = {str(p): digest(p.read_bytes()) for p in self.control_files}
+        (self.directory / 'control-hashes.json').write_text(json.dumps(self.controls, indent=2))
+        (self.directory / 'runner-source.py').write_text(Path(__file__).read_text())
+        (self.directory / 'repository-guide.md').write_text(self.guide)
+
+    def context(self, persona):
+        handoff = {'open_findings': self.latest_review.get('findings', []), 'checks': self.latest_checks}
+        # Full dialogue remains available for audit, but prior verdicts and agent
+        # narratives are not injected into a fresh review as presumed facts.
+        value = 'CURRENT HANDOFF\n' + json.dumps(handoff, indent=2)
+        if persona == 'reviewer':
+            sources = []
+            for file_index, name in enumerate(self.task['allowed_files'], 1):
+                path = self.repo / name
+                if path.is_file():
+                    lines = path.read_text().splitlines()
+                    sources.append(f'S{file_index} = {name}\n' + '\n'.join(f'[S{file_index}:{i}] {i}: {line}' for i, line in enumerate(lines, 1)))
+            packet = '\n\n'.join(sources)
+            if len(packet.encode()) > self.config.get('max_review_source_bytes', 60000):
+                raise ValueError('Review source packet exceeds budget; narrow the task')
+            value += '\n\nCOMPLETE CURRENT SOURCE (numbered)\n' + packet
+        return value
 
     def state(self, status, **details):
         data = {'task': self.task['id'], 'status': status,
@@ -175,6 +309,7 @@ class Runner:
         if snapshot(self.repo) != before:
             raise RuntimeError('Verification mutated repository files')
         (self.directory / (prefix + '-checks.json')).write_text(json.dumps(results, indent=2))
+        self.latest_checks = results
         self.append(prefix + ' verification', json.dumps(results, indent=2))
         return all(r['exit_code'] == 0 for r in results), results
 
@@ -182,8 +317,10 @@ class Runner:
         template = (ROOT / 'prompts' / (persona + '.md')).read_text()
         prompt = '\n\n'.join([template, 'REPOSITORY GUIDE\n' + self.guide,
                                'APPROVED TASK\n' + json.dumps(self.task, indent=2),
-                               'DIALOGUE\n' + self.dialogue.read_text(), extra])
+                               self.context(persona), extra])
         stem = f'round-{round_number}-{persona}'
+        if persona == 'reviewer' and self.review_attempt > 1:
+            stem += f'-attempt-{self.review_attempt}'
         (self.directory / (stem + '-prompt.md')).write_text(prompt)
         tools = 'Read,Glob,Grep' if persona == 'reviewer' else 'Read,Glob,Grep,Edit,Write,Bash'
         argv = [self.config['claude'], '-p', '--output-format', 'json', '--no-session-persistence',
@@ -197,6 +334,11 @@ class Runner:
         if envelope.get('is_error') or not isinstance(envelope.get('result'), str):
             raise RuntimeError(f'{persona} returned an error or no result')
         report = envelope['result']
+        with (self.directory / 'invocations.jsonl').open('a') as metrics:
+            metrics.write(json.dumps({'round': round_number, 'persona': persona,
+                                      'attempt': self.review_attempt if persona == 'reviewer' else 1,
+                                      'duration_ms': envelope.get('duration_ms'),
+                                      'turns': envelope.get('num_turns'), 'usage': envelope.get('usage')}) + '\n')
         (self.directory / (stem + '.md')).write_text(report)
         self.guard()
         return report
@@ -209,6 +351,7 @@ class Runner:
         if not passed:
             self.state('baseline_failed')
             return 1
+        review_count = 0
         for round_number in range(1, self.config['max_rounds'] + 1):
             report = self.invoke('implementer', round_number, 'Implement or address the latest review. Stop after this task.')
             self.append(f'Round {round_number}: implementer', report)
@@ -230,20 +373,35 @@ class Runner:
                             '\n'.join(str(self.directory / r['log']) for r in checks if r['exit_code']))
                 continue
             before_review = snapshot(self.repo)
-            review_text = self.invoke('reviewer', round_number,
-                                      'Review this exact diff, inspecting source as needed:\n' + current_patch.decode(errors='replace'))
-            if snapshot(self.repo) != before_review:
-                raise RuntimeError('Reviewer mutated repository files')
-            review = parse_review(review_text)
+            error = ''
+            for attempt in range(1, self.config.get('review_output_attempts', 2) + 1):
+                self.review_attempt = attempt
+                review_text = self.invoke('reviewer', round_number,
+                    'Review this exact diff against the COMPLETE CURRENT SOURCE above:\n' +
+                    current_patch.decode(errors='replace') + error)
+                if snapshot(self.repo) != before_review:
+                    raise RuntimeError('Reviewer mutated repository files')
+                try:
+                    review = parse_review(review_text)
+                    review = validate_review_evidence(review, self.repo, self.task)
+                    break
+                except ValueError as failure:
+                    self.append(f'Round {round_number}: invalid review output', str(failure))
+                    if attempt == self.config.get('review_output_attempts', 2):
+                        raise ValueError('Review output retries exhausted: ' + str(failure)) from failure
+                    error = '\nOUTPUT VALIDATION ERROR: ' + str(failure) + '\nReturn a corrected review addressing ALL errors, using source IDs supplied in brackets, such as S1:20.'
+            (self.directory / f'round-{round_number}-review-resolved.json').write_text(json.dumps(review, indent=2))
+            self.latest_review = review
+            review_count += 1
             self.append(f'Round {round_number}: reviewer', json.dumps(review, indent=2))
-            if review['verdict'] == 'approve' and round_number >= self.config['min_review_rounds']:
+            if review['verdict'] == 'approve' and review_count >= self.config['min_review_rounds']:
                 # Recheck after review and bind acceptance to exact content, not prose.
                 passed, _ = self.checks('final')
                 self.guard()
                 if not passed or snapshot(self.repo) != before_review or patch(self.repo) != current_patch:
                     raise RuntimeError('Final checks failed or reviewed content changed')
                 (self.directory / 'accepted.patch').write_bytes(current_patch)
-                self.state('accepted', round=round_number, patch_sha256=digest(current_patch),
+                self.state('accepted', round=round_number, reviews=review_count, patch_sha256=digest(current_patch),
                            base_commit=self.head.decode().strip(), committed=False)
                 return 0
             if review['verdict'] == 'approve':

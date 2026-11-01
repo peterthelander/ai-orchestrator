@@ -71,5 +71,8 @@
         "import runpy; runpy.run_path('/path/to/ai-orchestrator/acceptance/entourage_body_limit.py')"
       ]
     }
-  ]
+  ],
+  "test_guide": "configs/async-unittest-example.md",
+  "review_output_attempts": 2,
+  "max_review_source_bytes": 60000
 }

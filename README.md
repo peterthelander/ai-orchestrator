@@ -14,6 +14,7 @@ credentials into artifacts. It does not select a hosted model or configure crede
 - `configs/entourage.example.json`: editable example of the target, tools, timeouts, and required gates.
 - `configs/entourage.json`: ignored local configuration created from the example.
 - `configs/entourage-guide.md`: compact architecture and environment handoff.
+- `configs/async-unittest-example.md`: concise framework and async-test conventions.
 - `tasks/E001.json`: approved initial work order and allowed files.
 - `runner.py`: deterministic state machine; agents do not own task status.
 - `runs/<timestamp>-<task>/`: configuration/task snapshots, prompts, raw Claude
@@ -44,7 +45,7 @@ python3 runner.py --config configs/entourage.json --task tasks/E001.json
 The target must start clean. The runner holds a repository lock, executes every
 baseline gate, then alternates implementation and review with fresh contexts.
 Checks run after each implementation. Failures go back to implementation; review
-runs only once checks pass. The experiment requests at least two review rounds
+runs only once checks pass. The experiment requests at least two actual reviews (failed implementation rounds do not count)
 (up to four implementation attempts), including a fresh response to an initial
 approval. Reviewers must not manufacture criticism or changes merely to fill rounds.
 
@@ -66,7 +67,16 @@ printed when the phase changes; a slow Claude phase may produce no terminal outp
 The initial gate requires all server unit tests, all seven client test files,
 Expo lint, and TypeScript checking. After implementation it additionally runs
 an independent task-specific acceptance oracle in `acceptance/`; that oracle was
-confirmed to fail on the original code. Orchestrator controls are fingerprinted
+confirmed to fail on the original code. Reviewers receive complete numbered source and a compact handoff of open findings
+and check results, without prior approval narratives. Every review must cover all
+acceptance criteria and cite supplied source IDs. The runner records the exact
+corresponding source in resolved reviews. Legacy exact-quote references remain
+supported; missing or ambiguous quotes fail. Evidence and coverage errors are
+reported together for a bounded retry. Resolved reviews are saved separately from
+raw model output. These checks validate references, not the reviewer's reasoning. Implementers
+are told to challenge false premises and preserve working behavior.
+
+Orchestrator controls are fingerprinted
 and must remain unchanged throughout a run. Linux Node is explicitly selected to avoid
 Windows npm/UNC path problems. Run Python tests from `server/`.
 
@@ -94,3 +104,37 @@ See [EXPERIMENT.md](EXPERIMENT.md) for results, timings, artifacts, and observed
 
 Run logs, private environment files, and local configuration are excluded from Git.
 The experiment report is published; its raw run artifacts remain on the original machine.
+
+## Repeating an experiment
+
+Use a separate clean Git worktree at the original base revision to preserve an
+accepted local patch. Supply a separate ignored `configs/*.local.json` pointing at
+that worktree. Provide dependencies there; the local trial shares the installed
+Node modules and Python virtual environment through ignored symlinks, without
+copying private runtime data. The runner still requires a clean target and stores
+new artifacts separately. A single rerun is exploratory, not a controlled estimate
+of model reliability or a guarantee of improvement.
+
+See [EXPERIMENT-02.md](EXPERIMENT-02.md) for the second trial, including a stopped review-validation attempt.
+
+See [EXPERIMENT-03.md](EXPERIMENT-03.md) for the unattended third trial and comparison.
+
+See [EXPERIMENT-04.md](EXPERIMENT-04.md) for the new-task trial, which stopped on an inference timeout.
+
+## Review source IDs
+
+Review source packets now label each line with a short ID such as `[S1:20]`.
+Reviewers cite `{"anchor":"S1:20"}`; the runner resolves the exact file, line, and
+code into the saved review. Unknown, blank, and contradictory references fail.
+This avoids asking the local model to reproduce escaped source strings. The legacy
+unique-quote format remains supported for earlier fixtures. This changes reference
+bookkeeping, not required test gates or the quality of reasoning required for review.
+
+See [EXPERIMENT-05.md](EXPERIMENT-05.md) for E002 completion with stronger behavioral gates and source-ID reviews.
+
+To reproduce the latest parser task, adapt `configs/entourage-page.example.json`
+into an ignored local configuration and run:
+
+```bash
+python3 runner.py --config configs/entourage-page.local.json --task tasks/E002-v2.json
+```

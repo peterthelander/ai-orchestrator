@@ -1,0 +1,23 @@
+{
+  "id": "E002",
+  "title": "Preserve visible page content after hidden HTML void elements",
+  "problem": "Reproduced: PageText fed <input hidden><p>Visible tail</p> returns an empty text string. A hidden void element has no closing tag, but currently leaves the parser inside a hidden subtree forever.",
+  "allowed_files": [
+    "server/entourage_server/web_pages.py",
+    "server/tests/test_page_text_void.py"
+  ],
+  "required_changed_files": [
+    "server/entourage_server/web_pages.py",
+    "server/tests/test_page_text_void.py"
+  ],
+  "acceptance_criteria": [
+    "Hidden HTML void elements do not suppress subsequent visible text or links. Cover all standard void tags and both hidden and aria-hidden=\"true\".",
+    "Both ordinary void syntax and self-closing void syntax preserve subsequent content.",
+    "Non-void hidden subtrees and script/style content remain suppressed; void elements nested within hidden containers do not break correct recovery at the container end.",
+    "Ordinary visible text, HTML character references, title extraction, and relative-link resolution retain their existing behavior.",
+    "Add concise standard-library unittest regression tests using synthetic HTML. No network, inference, dependency changes, or changes to existing tests."
+  ],
+  "exclusions": [
+    "Only PageText parsing and one new regression-test module. Do not modify page fetching, public_url, DNS pinning, HTTP limits, tool schemas, or other functions. Preserve working parser behavior outside the demonstrated defect."
+  ]
+}
