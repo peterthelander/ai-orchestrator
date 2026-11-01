@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-task experiment runner. No model owns acceptance or runner state."""
+"""Bounded task runner. No model owns acceptance or runner state."""
 import argparse
 import copy
 from datetime import datetime, timezone
@@ -224,7 +224,8 @@ class Runner:
         self.config, self.task, self.directory = config, task, run_dir
         self.repo = Path(config['repository']).resolve()
         self.env = dict(os.environ)
-        self.env['PATH'] = config['node_bin'] + os.pathsep + self.env['PATH']
+        if config.get('node_bin'):
+            self.env['PATH'] = config['node_bin'] + os.pathsep + self.env['PATH']
         # Read only explicitly named literal exports; never execute shell startup code.
         env_file = config.get('environment_file')
         if env_file:
@@ -242,7 +243,8 @@ class Runner:
         self.head = git(self.repo, 'rev-parse', 'HEAD')
         self.index = git(self.repo, 'diff', '--cached', '--binary')
         self.dialogue = self.directory / 'dialogue.md'
-        self.dialogue.write_text('# ' + task['id'] + ': ' + task['title'] + '\n')
+        if not self.dialogue.exists():
+            self.dialogue.write_text('# ' + task['id'] + ': ' + task['title'] + '\n')
         self.guide = (ROOT / config['guide']).read_text()
         if config.get('test_guide'):
             self.guide += '\n\n' + (ROOT / config['test_guide']).read_text()
@@ -252,10 +254,20 @@ class Runner:
         self.review_attempt = 1
         self.control_files = [p for p in ROOT.rglob('*') if p.is_file()
                               and not any(part in ('runs', '__pycache__', '.git') for part in p.relative_to(ROOT).parts)]
+        self.control_files += [Path(config[k]) for k in ('guide', 'test_guide') if config.get(k) and Path(config[k]).is_absolute()]
+        # Protect external task/config snapshots and explicit script executables too.
+        self.control_files += [self.directory / name for name in ('config.json', 'task.json')
+                               if (self.directory / name).is_file()]
+        for check in config.get('checks', []) + config.get('acceptance_checks', []):
+            for arg in check['argv']:
+                candidate = Path(arg)
+                if candidate.is_absolute() and candidate.is_file() and not candidate.resolve().is_relative_to(self.repo):
+                    self.control_files.append(candidate.resolve())
         self.controls = {str(p): digest(p.read_bytes()) for p in self.control_files}
-        (self.directory / 'control-hashes.json').write_text(json.dumps(self.controls, indent=2))
-        (self.directory / 'runner-source.py').write_text(Path(__file__).read_text())
-        (self.directory / 'repository-guide.md').write_text(self.guide)
+        if not (self.directory / 'control-hashes.json').exists():
+            (self.directory / 'control-hashes.json').write_text(json.dumps(self.controls, indent=2))
+            (self.directory / 'runner-source.py').write_text(Path(__file__).read_text())
+            (self.directory / 'repository-guide.md').write_text(self.guide)
 
     def context(self, persona):
         handoff = {'open_findings': self.latest_review.get('findings', []), 'checks': self.latest_checks}
@@ -309,7 +321,8 @@ class Runner:
             code = run_process(check['argv'], self.repo / check['cwd'], output,
                                self.config['check_timeout_seconds'], self.env)
             results.append({'name': check['name'], 'exit_code': code, 'log': output.name,
-                            'seconds': round(time.monotonic() - started, 2)})
+                            'seconds': round(time.monotonic() - started, 2),
+                            **({'failure_output': output.read_text(errors='replace')[-2000:]} if code else {})})
         if snapshot(self.repo) != before:
             raise RuntimeError('Verification mutated repository files')
         (self.directory / (prefix + '-checks.json')).write_text(json.dumps(results, indent=2))
@@ -347,16 +360,90 @@ class Runner:
         self.guard()
         return report
 
-    def execute(self):
-        if git(self.repo, 'status', '--porcelain').strip():
-            raise RuntimeError('Target must start with a clean Git working tree')
-        self.state('baseline')
-        passed, _ = self.checks('baseline')
-        if not passed:
-            self.state('baseline_failed')
-            return 1
-        review_count = 0
-        for round_number in range(1, self.config['max_rounds'] + 1):
+    def accept(self, round_number, review_count, before_review, current_patch):
+        modifications = changed(self.base, snapshot(self.repo))
+        missing = set(self.task.get('required_changed_files', [])) - modifications
+        if not modifications or missing:
+            raise RuntimeError('Required implementation deliverables missing at acceptance')
+        passed, _ = self.checks('final')
+        self.guard()
+        if not passed or snapshot(self.repo) != before_review or patch(self.repo) != current_patch:
+            raise RuntimeError('Final checks failed or reviewed content changed')
+        (self.directory / 'accepted.patch').write_bytes(current_patch)
+        self.state('accepted', round=round_number, reviews=review_count,
+                   patch_sha256=digest(current_patch), base_commit=self.head.decode().strip(), committed=False)
+        return 0
+
+    def escalate(self, round_number, review_count, reason):
+        before = snapshot(self.repo)
+        packet = {'task': self.task, 'repository': str(self.repo),
+                  'patch_sha256': digest(patch(self.repo)),
+                  'findings': self.latest_review['findings'],
+                  'implementer_response': self.latest_implementation[:6000],
+                  'checks': self.latest_checks,
+                  'source_hashes': {name: before.get(name) for name in self.task['allowed_files']},
+                  'reason': reason}
+        (self.directory / 'parent-packet.json').write_text(json.dumps(packet, indent=2))
+        checkpoint = {'round': round_number, 'reviews': review_count, 'base': self.base,
+                      'head': self.head.decode(), 'index_hex': self.index.hex(),
+                      'snapshot': before, 'patch_sha256': packet['patch_sha256'],
+                      'review': self.latest_review, 'implementation': self.latest_implementation,
+                      'checks': self.latest_checks, 'controls': self.controls,
+                      'config_sha256': digest(json.dumps(self.config, sort_keys=True).encode()),
+                      'task_sha256': digest(json.dumps(self.task, sort_keys=True).encode())}
+        (self.directory / 'checkpoint.json').write_text(json.dumps(checkpoint, indent=2))
+        self.state('parent_required', round=round_number, reviews=review_count, reason=reason)
+        return 2
+
+    def restore(self, decision):
+        from dispute_review import resolve_parent
+        saved = json.loads((self.directory / 'checkpoint.json').read_text())
+        for name, value in [('config', self.config), ('task', self.task)]:
+            if digest(json.dumps(value, sort_keys=True).encode()) != saved[name + '_sha256']:
+                raise ValueError('Resume contract changed: ' + name)
+        if json.loads(json.dumps(snapshot(self.repo))) != saved['snapshot']:
+            raise ValueError('Resume source changed since escalation')
+        self.controls = saved['controls']
+        self.head, self.index = saved['head'].encode(), bytes.fromhex(saved['index_hex'])
+        self.base = {k: tuple(v) if isinstance(v, list) else v for k, v in saved['base'].items()}
+        self.guard()
+        packet = json.loads((self.directory / 'parent-packet.json').read_text())
+        if (packet['patch_sha256'] != saved['patch_sha256'] or
+                packet['findings'] != saved['review']['findings'] or
+                packet['task'] != self.task or Path(packet['repository']).resolve() != self.repo):
+            raise ValueError('Resume packet changed')
+        result = resolve_parent(packet, decision)
+        (self.directory / 'parent-decision.json').write_text(json.dumps(result, indent=2))
+        self.latest_review = saved['review']
+        self.latest_implementation, self.latest_checks = saved['implementation'], saved['checks']
+        remaining = [f for f in self.latest_review['findings']
+                     if result['resolutions'][f['id']]['decision'] != 'withdrawn']
+        self.latest_review['findings'] = remaining
+        self.latest_review['verdict'] = 'request_changes' if remaining else 'approve'
+        self.append('Hosted parent decision', json.dumps(result, indent=2))
+        return saved, result
+
+    def execute(self, decision=None):
+        if decision is not None:
+            saved, result = self.restore(decision)
+            if result['status'] in ('unresolved', 'blocked_checks'):
+                self.state('parent_required', reason=result['status'])
+                return 2
+            review_count = saved['reviews']
+            if not self.latest_review['findings'] and review_count >= self.config['min_review_rounds']:
+                return self.accept(saved['round'], review_count, snapshot(self.repo), patch(self.repo))
+            start_round = saved['round'] + 1
+        else:
+            if git(self.repo, 'status', '--porcelain').strip():
+                raise RuntimeError('Target must start with a clean Git working tree')
+            self.state('baseline')
+            passed, _ = self.checks('baseline')
+            if not passed:
+                self.state('baseline_failed')
+                return 1
+            review_count, start_round = 0, 1
+        for round_number in range(start_round, self.config['max_rounds'] + 1):
+            previous_findings = {f['id'] for f in getattr(self, 'latest_review', {'findings': []})['findings']}
             report = self.invoke('implementer', round_number, 'Implement or address the latest review. Stop after this task.')
             self.latest_implementation = report
             self.append(f'Round {round_number}: implementer', report)
@@ -393,25 +480,30 @@ class Runner:
                 except ValueError as failure:
                     self.append(f'Round {round_number}: invalid review output', str(failure))
                     if attempt == self.config.get('review_output_attempts', 2):
-                        raise ValueError('Review output retries exhausted: ' + str(failure)) from failure
+                        return self.escalate(round_number, review_count, 'Review output retries exhausted: ' + str(failure))
                     error = '\nOUTPUT VALIDATION ERROR: ' + str(failure) + '\nReturn a corrected review addressing ALL errors, using source IDs supplied in brackets, such as S1:20.'
             (self.directory / f'round-{round_number}-review-resolved.json').write_text(json.dumps(review, indent=2))
             self.latest_review = review
             review_count += 1
             self.append(f'Round {round_number}: reviewer', json.dumps(review, indent=2))
+            repeated = previous_findings & {f['id'] for f in review['findings']}
+            if repeated and self.config.get('dispute_escalation', False):
+                from dispute_review import opinion
+                self.opinion_round = round_number
+                try:
+                    review, decisions = opinion(self, 'adjudicator', review['findings'], before_review)
+                except ValueError as failure:
+                    return self.escalate(round_number, review_count, str(failure))
+                self.latest_review = review
+                if any(row['decision'] != 'withdrawn' for row in decisions.values()):
+                    return self.escalate(round_number, review_count, 'Finding persists after fresh local opinion')
             if review['verdict'] == 'approve' and review_count >= self.config['min_review_rounds']:
-                # Recheck after review and bind acceptance to exact content, not prose.
-                passed, _ = self.checks('final')
-                self.guard()
-                if not passed or snapshot(self.repo) != before_review or patch(self.repo) != current_patch:
-                    raise RuntimeError('Final checks failed or reviewed content changed')
-                (self.directory / 'accepted.patch').write_bytes(current_patch)
-                self.state('accepted', round=round_number, reviews=review_count, patch_sha256=digest(current_patch),
-                           base_commit=self.head.decode().strip(), committed=False)
-                return 0
+                return self.accept(round_number, review_count, before_review, current_patch)
             if review['verdict'] == 'approve':
                 self.append('Additional experimental review round',
                             'Approval recorded. Run a fresh implementation response and second review; do not invent changes.')
+        if self.config.get('dispute_escalation', False) and self.latest_review['findings']:
+            return self.escalate(self.config['max_rounds'], review_count, 'Round limit reached with open findings')
         self.state('unresolved', reason='Round limit reached; changes retained for inspection')
         return 1
 
@@ -420,9 +512,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', default='configs/entourage.json')
     parser.add_argument('--task', default='tasks/E001.json')
+    parser.add_argument('--run-dir', help='Explicit artifact directory for the reusable CLI')
+    parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--decision', help='Hosted parent decision JSON for a pending escalation')
     args = parser.parse_args()
+    if args.resume and (not args.run_dir or not args.decision):
+        parser.error('--resume requires --run-dir and --decision')
     config = json.loads((ROOT / args.config).read_text())
     task = json.loads((ROOT / args.task).read_text())
+    # Low-level entry point also enforces the reusable CLI contract.
+    from orchestrator import validate
+    try:
+        validate(config, task)
+    except (ValueError, KeyError) as error:
+        parser.error(str(error))
     if not 1 <= config['min_review_rounds'] <= config['max_rounds']:
         parser.error('Require 1 <= min_review_rounds <= max_rounds')
     repo = Path(config['repository']).resolve()
@@ -439,14 +542,20 @@ def main():
         except BlockingIOError:
             parser.error('Another runner owns this repository')
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-        directory = ROOT / 'runs' / (stamp + '-' + task['id'])
-        directory.mkdir(parents=True)
+        directory = Path(args.run_dir).resolve() if args.run_dir else ROOT / 'runs' / (stamp + '-' + task['id'])
+        if args.resume:
+            if json.loads((directory / 'state.json').read_text())['status'] != 'parent_required':
+                parser.error('Only parent_required runs may resume')
+            if json.loads((directory / 'config.json').read_text()) != config or json.loads((directory / 'task.json').read_text()) != task:
+                parser.error('Saved run contract changed')
+        else:
+            directory.mkdir(parents=True, exist_ok=False)
         (directory / 'config.json').write_text(json.dumps(config, indent=2))
         (directory / 'task.json').write_text(json.dumps(task, indent=2))
         runner = Runner(config, task, directory)
         print('Run artifacts: ' + str(directory), flush=True)
         try:
-            return runner.execute()
+            return runner.execute(json.loads(Path(args.decision).read_text()) if args.resume else None)
         except (Exception, KeyboardInterrupt) as error:
             try:
                 (directory / 'interrupted.patch').write_bytes(patch(repo))

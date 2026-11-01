@@ -40,7 +40,7 @@ def opinion(agent, persona, findings, before):
     error = ''
     for attempt in range(1, agent.config.get('review_output_attempts', 3) + 1):
         agent.review_attempt = attempt
-        report = agent.invoke(persona, 1, '''Reconsider ONLY these open findings. No code changes.
+        report = agent.invoke(persona, getattr(agent, 'opinion_round', 1), '''Reconsider ONLY these open findings. No code changes.
 Also return "resolutions": [{"id":"R1","decision":"withdrawn|upheld|uncertain",
 "reason":"Address the implementer's evidence explicitly"}].
 Return one resolution per supplied ID. Withdrawn IDs must be absent from findings;
@@ -52,7 +52,7 @@ all acceptance-criterion coverage, and source-ID evidence.''' + error)
             review = validate_review_evidence(parse_review(report), agent.repo, agent.task)
             resolved = resolutions(review, findings)
             agent.append(persona + ' opinion', json.dumps(review, indent=2))
-            (agent.directory / (persona + '-resolved.json')).write_text(json.dumps(review, indent=2))
+            (agent.directory / (f"round-{getattr(agent, 'opinion_round', 1)}-{persona}-opinion-resolved.json")).write_text(json.dumps(review, indent=2))
             return review, resolved
         except ValueError as failure:
             agent.append(persona + ' invalid output', str(failure))

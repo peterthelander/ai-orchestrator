@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Coding Loop"
+  short_description: "Delegate checked coding tasks to the local model"
+  default_prompt: "Use $local-coding-loop to prepare and run a bounded coding task in this repository."

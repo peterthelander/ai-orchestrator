@@ -1,11 +1,84 @@
 # AI Orchestrator
 
-A small, local Claude Code experiment: one approved task, fresh implementer and
-reviewer invocations, independently executed checks, and a durable Markdown dialogue.
-The runner uses the existing Claude configuration, including its local inference
-endpoint. The Entourage configuration reads only the three named literal
-`ANTHROPIC_*` exports from `~/.bashrc`; it never executes that file or copies
-credentials into artifacts. It does not select a hosted model or configure credentials.
+Delegate bounded coding tasks from Codex to your local Claude CLI. A deterministic
+runner creates an isolated Git worktree, runs automated gates, manages fresh
+implementation/review contexts, and returns a patch or a compact hosted-parent
+escalation. Python standard library only; Linux/WSL, Python 3.12, Git, and Claude
+Code are required.
+
+## Use from Codex
+
+From this maintained checkout:
+
+```bash
+python3 orchestrator.py install
+```
+
+This links the `local-coding-loop` skill into `$CODEX_HOME/skills` (or
+`~/.codex/skills`) and installs `~/.local/bin/ai-orchestrator`. It does not overwrite
+unrelated installations. Keep this checkout in place; updates apply to the linked
+skill and launcher. Add `~/.local/bin` to PATH if needed, and open a new Codex
+session to discover the skill.
+
+Then ask Codex:
+
+> Use $local-coding-loop to onboard this repository, then implement this change.
+
+Codex prepares a reusable repository profile and a small task. The local model
+implements and reviews while Codex waits for completion. Unresolved disputes get
+one fresh local adjudication, then a saved parent packet. Codex can record a
+per-finding decision and resume without waiving mandatory checks.
+
+## Everyday commands
+
+```bash
+# Create a profile and short guide; configure real repository gates and setup.
+ai-orchestrator init my-project --repo /path/to/project
+ai-orchestrator doctor my-project
+
+# Run one task or an independent queue, each in its own isolated worktree.
+ai-orchestrator run my-project --task /path/to/task.json
+ai-orchestrator queue my-project --task /path/to/one.json --task /path/to/two.json
+
+# Read a summary, or resume a saved hosted-parent escalation.
+ai-orchestrator status /path/to/run
+ai-orchestrator resume /path/to/run --decision /path/to/decision.json
+```
+
+Profiles, guides, and artifacts live under `~/.local/share/ai-orchestrator`;
+`AI_ORCHESTRATOR_HOME` overrides that location. `doctor` verifies dependency setup
+and baseline gates in a fresh worktree without a model call. Fresh worktrees need
+explicit dependency setup; existing uncommitted source changes are preserved and
+excluded. Queues run independent tasks against one frozen committed base; they do
+not compose patches or support dependent tasks automatically.
+
+Accepted patches remain uncommitted, with final checks and exact content hashes.
+The tool never automatically applies, merges, pushes, or deploys them. Exit codes
+are 0 accepted, 1 failed/unresolved, and 2 parent decision required (`queue` returns
+1 if any task is not accepted). Defaults are four implementation rounds, one valid
+review, two review-format attempts, and one fresh opinion for repeated findings.
+Limits are configurable. Resume supports saved escalations, not arbitrary crashes;
+interrupted attempts retain evidence and need a fresh worktree.
+
+See the [workflow reference](skills/local-coding-loop/references/workflow.md) for
+profile/task schemas, independent acceptance checks, environment configuration,
+and parent decisions. The implementation model has Bash access; worktrees and
+guards are not an adversarial sandbox. Saved transcripts may contain private source.
+
+## Verification
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Tests include CLI execution with a fake Claude executable, isolation from dirty
+source checkouts, queue continuation, fresh adjudication, checkpoint/resume,
+stale-source and contract rejection, scope enforcement, and final-check failure.
+No inference server is needed for this suite.
+
+The remaining sections document the original experiments and low-level runner.
+Their machine-specific examples are retained for reproducibility; new repositories
+should use the CLI and profiles above.
 
 ## Why this experiment exists
 
@@ -14,8 +87,9 @@ separate deterministic runner owns scope, verification, and acceptance? This
 repository investigates that question through saved experiment protocols and
 results rather than assuming that model approval proves correctness.
 
-**Status:** active research tooling for trusted local use. Configuration is
-machine- and task-specific; this is not a general autonomous development service.
+**Status:** usable local tooling for trusted Linux/WSL work, with experimental
+evidence below. Passing configured checks does not prove all product behavior or
+establish a general cost advantage over hosted-only development.
 
 ```mermaid
 flowchart LR
@@ -117,7 +191,7 @@ and tests are outside the allowed edit scope; only one middleware and one new te
 file may change. Passing this experiment is not a claim that all product behavior
 has been verified.
 
-## Limitations and next experiments
+## Limitations and research background
 
 This runner is for a trusted local model, not an adversarial sandbox. File guards
 stop acceptance after unexpected changes; they cannot prevent arbitrary Bash from
@@ -125,9 +199,9 @@ making external changes. Do not run it against unrelated work or hostile code.
 Review agreement from the same model is imperfect evidence. Task acceptance criteria
 still need careful onboarding; ordinary regression checks alone cannot prove them.
 
-Planning is intentionally not automated yet. Establish a green baseline, approve a
-small objective and queue, then measure task outcomes before expanding scope.
-Configurations are machine-specific and should be adapted for another environment.
+The low-level runner consumes explicit task contracts. The Codex skill handles
+preparation and onboarding; repository-specific checks still need to be configured.
+Keep objectives small and establish a green baseline before delegating work.
 
 ## First trial
 
