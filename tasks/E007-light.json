@@ -1,0 +1,18 @@
+{
+  "id": "E007-light",
+  "title": "Preserve all six HTML heading levels as text blocks",
+  "problem": "Make PageText preserve separate text blocks for all six HTML heading levels. Keep existing parser behavior intact.",
+  "allowed_files": [
+    "server/entourage_server/web_pages.py",
+    "server/tests/test_page_headings.py"
+  ],
+  "required_changed_files": [
+    "server/entourage_server/web_pages.py",
+    "server/tests/test_page_headings.py"
+  ],
+  "acceptance_criteria": [
+    "Treat every heading level h1 through h6 as a block boundary: visible text before, inside, and after a heading is separated by newlines, including adjacent headings.",
+    "Preserve hidden/aria-hidden suppression, visible br formatting, character references, title and link extraction; do not change network fetching, URL policy, or unrelated parser behavior.",
+    "Add concise standard-library unittest tests using synthetic HTML in the new test file. No dependency changes, live requests, or existing-test edits."
+  ]
+}

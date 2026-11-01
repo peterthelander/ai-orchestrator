@@ -303,5 +303,24 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn('R1 rejected', obj.context('reviewer'))
 
 
+
+    def test_both_review_roles_receive_only_read_tools(self):
+        with tempfile.TemporaryDirectory() as temp:
+            obj = self.make_trial_runner(temp, max_rounds=1, min_reviews=1)
+            obj.config.update(claude='fake', invocation_timeout_seconds=5)
+            captured = []
+            def process(argv, cwd, output, timeout, env, prompt=None):
+                captured.append(argv)
+                output.write_text(json.dumps({'type': 'result', 'result': 'report', 'is_error': False}))
+                return 0
+            with patch.object(runner, 'run_process', side_effect=process):
+                obj.invoke('reviewer', 1, 'review')
+                obj.invoke('adjudicator', 1, 'adjudicate')
+            for argv in captured:
+                self.assertEqual(argv[argv.index('--tools') + 1], 'Read,Glob,Grep')
+                self.assertEqual(argv[argv.index('--allowedTools') + 1], 'Read,Glob,Grep')
+                self.assertIn('--strict-mcp-config', argv)
+
+
 if __name__ == '__main__':
     unittest.main()

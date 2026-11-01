@@ -1,0 +1,18 @@
+{
+  "id": "E007-detailed",
+  "title": "Preserve all six HTML heading levels as text blocks",
+  "problem": "Reproduced: PageText fed Before<h5>Heading</h5>After returns Before Heading After, but h1 returns three separate lines. h5 and h6 are missing from the block-boundary tag sets in handle_starttag and handle_endtag. Inspect and update both paths while leaving hidden-attribute checks ahead of visible formatting. Test all levels h1-h6, adjacent h5/h6, text around headings, hidden and aria-hidden headings, links, character references, title, and visible br. Use unittest.TestCase with a small parse helper and subTest loops. No need to redesign the parser.",
+  "allowed_files": [
+    "server/entourage_server/web_pages.py",
+    "server/tests/test_page_headings.py"
+  ],
+  "required_changed_files": [
+    "server/entourage_server/web_pages.py",
+    "server/tests/test_page_headings.py"
+  ],
+  "acceptance_criteria": [
+    "Treat every heading level h1 through h6 as a block boundary: visible text before, inside, and after a heading is separated by newlines, including adjacent headings.",
+    "Preserve hidden/aria-hidden suppression, visible br formatting, character references, title and link extraction; do not change network fetching, URL policy, or unrelated parser behavior.",
+    "Add concise standard-library unittest tests using synthetic HTML in the new test file. No dependency changes, live requests, or existing-test edits."
+  ]
+}

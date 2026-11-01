@@ -259,13 +259,13 @@ class Runner:
 
     def context(self, persona):
         handoff = {'open_findings': self.latest_review.get('findings', []), 'checks': self.latest_checks}
-        if persona == 'reviewer' and handoff['open_findings']:
+        if persona in {'reviewer', 'adjudicator'} and handoff['open_findings']:
             handoff['implementer_response_to_findings'] = getattr(self, 'latest_implementation', '')[:6000]
             handoff['response_instruction'] = 'Unverified implementer response: check its evidence against source and deterministic results. Resolve rejected findings when the premise is false.'
         # Full dialogue remains available for audit, but prior verdicts and agent
         # narratives are not injected into a fresh review as presumed facts.
         value = 'CURRENT HANDOFF\n' + json.dumps(handoff, indent=2)
-        if persona == 'reviewer':
+        if persona in {'reviewer', 'adjudicator'}:
             sources = []
             for file_index, name in enumerate(self.task['allowed_files'], 1):
                 path = self.repo / name
@@ -323,10 +323,10 @@ class Runner:
                                'APPROVED TASK\n' + json.dumps(self.task, indent=2),
                                self.context(persona), extra])
         stem = f'round-{round_number}-{persona}'
-        if persona == 'reviewer' and self.review_attempt > 1:
+        if persona in {'reviewer', 'adjudicator'} and self.review_attempt > 1:
             stem += f'-attempt-{self.review_attempt}'
         (self.directory / (stem + '-prompt.md')).write_text(prompt)
-        tools = 'Read,Glob,Grep' if persona == 'reviewer' else 'Read,Glob,Grep,Edit,Write,Bash'
+        tools = 'Read,Glob,Grep' if persona in {'reviewer', 'adjudicator'} else 'Read,Glob,Grep,Edit,Write,Bash'
         argv = [self.config['claude'], '-p', '--output-format', 'json', '--no-session-persistence',
                 '--tools', tools, '--allowedTools', tools, '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']
         log = self.directory / (stem + '.json')
@@ -340,7 +340,7 @@ class Runner:
         report = envelope['result']
         with (self.directory / 'invocations.jsonl').open('a') as metrics:
             metrics.write(json.dumps({'round': round_number, 'persona': persona,
-                                      'attempt': self.review_attempt if persona == 'reviewer' else 1,
+                                      'attempt': self.review_attempt if persona in {'reviewer', 'adjudicator'} else 1,
                                       'duration_ms': envelope.get('duration_ms'),
                                       'turns': envelope.get('num_turns'), 'usage': envelope.get('usage')}) + '\n')
         (self.directory / (stem + '.md')).write_text(report)

@@ -142,3 +142,7 @@ python3 runner.py --config configs/entourage-page.local.json --task tasks/E002-v
 See [BENCHMARK-01.md](BENCHMARK-01.md) for the first hosted-only versus hybrid paired pilot and measured usage caveats.
 
 See [BENCHMARK-BATCH-02.md](BENCHMARK-BATCH-02.md) for the three-task batch and post-batch rebuttal-handoff fix.
+
+See [STRATEGY.md](STRATEGY.md) for consolidated directions,
+[DISPUTE-STUDY.md](DISPUTE-STUDY.md) for dispute replay/escalation evidence and usage,
+and [PREPARATION-STUDY.md](PREPARATION-STUDY.md) for the paired short-vs-detailed brief trial.
