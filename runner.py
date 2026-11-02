@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
+import ipaddress
+from urllib.parse import urlsplit
 import os
 import re
 from pathlib import Path
@@ -238,6 +240,21 @@ class Runner:
                         if '$' in value or '`' in value:
                             raise ValueError('Environment exports must be literal values')
                         self.env[key] = value
+        if config.get('local_only'):
+            endpoint = urlsplit(self.env.get('ANTHROPIC_BASE_URL', ''))
+            try:
+                local = endpoint.hostname == 'localhost' or ipaddress.ip_address(endpoint.hostname).is_private
+            except ValueError:
+                local = False
+            if endpoint.scheme not in {'http', 'https'} or not local or endpoint.username or endpoint.password:
+                raise ValueError('Local-only runs require an explicit private-IP or localhost inference endpoint')
+            if not self.env.get('ANTHROPIC_MODEL'):
+                raise ValueError('Local-only runs require an explicit ANTHROPIC_MODEL')
+            for key in ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY',
+                        'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy'):
+                self.env.pop(key, None)
+            self.env['ANTHROPIC_API_KEY'] = self.env.get('ANTHROPIC_AUTH_TOKEN', 'local-inference')
+            self.env['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
         self.env.pop('CLAUDECODE', None)
         self.base = snapshot(self.repo)
         self.head = git(self.repo, 'rev-parse', 'HEAD')
@@ -263,6 +280,7 @@ class Runner:
                 candidate = Path(arg)
                 if candidate.is_absolute() and candidate.is_file() and not candidate.resolve().is_relative_to(self.repo):
                     self.control_files.append(candidate.resolve())
+        self.control_files += [Path(name) for name in config.get('control_files', [])]
         self.controls = {str(p): digest(p.read_bytes()) for p in self.control_files}
         if not (self.directory / 'control-hashes.json').exists():
             (self.directory / 'control-hashes.json').write_text(json.dumps(self.controls, indent=2))
@@ -311,6 +329,12 @@ class Runner:
         if unexpected:
             raise RuntimeError('Out-of-scope edits: ' + ', '.join(sorted(unexpected)))
 
+    def time_limit(self, configured):
+        remaining = self.config.get('deadline_epoch', float('inf')) - time.time()
+        if remaining <= 0:
+            raise TimeoutError('Task/overnight deadline reached')
+        return min(configured, remaining)
+
     def checks(self, prefix):
         before = snapshot(self.repo)
         results = []
@@ -319,7 +343,7 @@ class Runner:
             output = self.directory / (prefix + '-' + check['name'] + '.log')
             started = time.monotonic()
             code = run_process(check['argv'], self.repo / check['cwd'], output,
-                               self.config['check_timeout_seconds'], self.env)
+                               self.time_limit(self.config['check_timeout_seconds']), self.env)
             results.append({'name': check['name'], 'exit_code': code, 'log': output.name,
                             'seconds': round(time.monotonic() - started, 2),
                             **({'failure_output': output.read_text(errors='replace')[-2000:]} if code else {})})
@@ -332,6 +356,8 @@ class Runner:
 
     def invoke(self, persona, round_number, extra):
         template = (ROOT / 'prompts' / (persona + '.md')).read_text()
+        if self.config.get('local_only'):
+            template += '\nThis is an offline local-only batch. Do not invoke hosted models, other agent CLIs, image generation, paid APIs, network services, or deployment commands. Use mocks and deterministic local tests. Leave any unresolved design question in the report.'
         prompt = '\n\n'.join([template, 'REPOSITORY GUIDE\n' + self.guide,
                                'APPROVED TASK\n' + json.dumps(self.task, indent=2),
                                self.context(persona), extra])
@@ -342,9 +368,12 @@ class Runner:
         tools = 'Read,Glob,Grep' if persona in {'reviewer', 'adjudicator'} else 'Read,Glob,Grep,Edit,Write,Bash'
         argv = [self.config['claude'], '-p', '--output-format', 'json', '--no-session-persistence',
                 '--tools', tools, '--allowedTools', tools, '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']
+        if self.config.get('local_only'):
+            argv += ['--bare', '--setting-sources', '', '--disable-slash-commands',
+                     '--model', self.env['ANTHROPIC_MODEL']]
         log = self.directory / (stem + '.json')
         self.state(persona, round=round_number)
-        code = run_process(argv, self.repo, log, self.config['invocation_timeout_seconds'], self.env, prompt)
+        code = run_process(argv, self.repo, log, self.time_limit(self.config['invocation_timeout_seconds']), self.env, prompt)
         if code:
             raise RuntimeError(f'{persona} exited {code}; see {log.name}')
         envelope = parse_envelope(log.read_text())

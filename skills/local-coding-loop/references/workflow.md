@@ -144,3 +144,14 @@ or launcher. Add that bin directory to PATH if needed and open a new Codex sessi
 
 The implementation model has Bash access. Worktrees and file guards protect
 acceptance and preserve ordinary changes; they are not an adversarial sandbox.
+
+## Overnight, with no hosted continuation
+
+When explicitly asked to schedule local-only overnight work, prepare bounded tasks
+and passing repository baselines, then use the checkout's `overnight.py` supervisor
+with an operating-system timer. Its manifest freezes each base/config/task, gives
+repository release times, per-task limits and a final cutoff. Set `local_only: true`
+for every entry. Use a saved runtime snapshot and preserve all artifacts. It parks
+parent-required decisions, continues unrelated tasks, and writes `summary.json`
+and `MORNING-REPORT.md`. Do not schedule a hosted Codex wakeup to monitor it.
+The checkout's `docs/OVERNIGHT.md` describes the manifest and service bounds.

@@ -146,7 +146,7 @@ def setup(job):
     for command in config.get('setup', []):
         code = run_process(command['argv'], agent.repo / command['cwd'],
                            job / ('setup-' + command['name'] + '.log'),
-                           config['check_timeout_seconds'], agent.env)
+                           agent.time_limit(config['check_timeout_seconds']), agent.env)
         if code:
             raise RuntimeError('Dependency setup failed: ' + command['name'])
     if git(agent.repo, 'status', '--porcelain').strip():

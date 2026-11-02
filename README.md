@@ -73,6 +73,14 @@ profile/task schemas, independent acceptance checks, environment configuration,
 and parent decisions. The implementation model has Bash access; worktrees and
 guards are not an adversarial sandbox. Saved transcripts may contain private source.
 
+## Overnight execution
+
+A local-only supervisor can serialize independent tasks across repositories, honor
+staggered release times and an overnight cutoff, and leave a morning report without
+invoking hosted Codex. Disputes are parked instead of automatically escalated.
+See [overnight batches](docs/OVERNIGHT.md) for scheduling and manifest details.
+Keep the WSL host and local inference machine awake and reachable.
+
 ## Verification
 
 ```bash
