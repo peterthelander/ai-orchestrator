@@ -7,7 +7,9 @@ import fcntl
 import hashlib
 import json
 import ipaddress
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
+from urllib.error import HTTPError, URLError
+from urllib.request import build_opener, ProxyHandler, HTTPRedirectHandler
 import os
 import re
 from pathlib import Path
@@ -60,13 +62,67 @@ def patch(repo):
     return data
 
 
-def run_process(argv, cwd, output, timeout, env, prompt=None):
+class InferenceUnavailable(RuntimeError):
+    pass
+
+
+class NoHealthRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def probe_inference(env, timeout=5, *, active=False):
+    endpoint = urlsplit(env['ANTHROPIC_BASE_URL'])
+    url = urlunsplit((endpoint.scheme, endpoint.netloc, '/health', '', ''))
+    opener = build_opener(ProxyHandler({}), NoHealthRedirect())
+    try:
+        with opener.open(url, timeout=timeout) as response:
+            if response.status != 200:
+                raise InferenceUnavailable(f'Inference health returned HTTP {response.status}')
+    except HTTPError as error:
+        error.close()
+        # A saturated llama.cpp server can return 503 while serving an active request.
+        if not (active and error.code == 503):
+            raise InferenceUnavailable(f'Inference health returned HTTP {error.code}') from error
+    except (URLError, OSError) as error:
+        raise InferenceUnavailable('Local inference health connection failed') from error
+
+
+def check_inference(config):
+    if config.get('local_only'):
+        env = model_environment(config)
+        def probe():
+            remaining = config.get('deadline_epoch', float('inf')) - time.time()
+            if remaining <= 0:
+                raise TimeoutError('Task/overnight deadline reached')
+            probe_inference(env, min(5, remaining))
+
+        try:
+            probe()
+        except InferenceUnavailable:
+            probe()
+
+
+def run_process(argv, cwd, output, timeout, env, prompt=None, heartbeat=None):
     """Preserve output; kill entire process group on timeout or interruption."""
     with output.open('wb') as log:
         proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE if prompt else subprocess.DEVNULL,
                                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         try:
-            proc.communicate(input=prompt.encode() if prompt else None, timeout=timeout)
+            deadline = time.monotonic() + timeout
+            input_data = prompt.encode() if prompt else None
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(argv, timeout)
+                try:
+                    proc.communicate(input=input_data, timeout=min(30, remaining) if heartbeat else remaining)
+                    break
+                except subprocess.TimeoutExpired:
+                    if heartbeat is None or remaining <= 30:
+                        raise
+                    input_data = None
+                    heartbeat(deadline - time.monotonic())
         except BaseException:
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
@@ -221,41 +277,46 @@ def validate_review_evidence(review, repo, task):
     return resolved
 
 
+def model_environment(config):
+    env = dict(os.environ)
+    if config.get('node_bin'):
+        env['PATH'] = config['node_bin'] + os.pathsep + env['PATH']
+    # Read only explicitly named literal exports; never execute shell startup code.
+    env_file = config.get('environment_file')
+    if env_file:
+        allowed = set(config.get('environment_keys', []))
+        for line in Path(env_file).expanduser().read_text().splitlines():
+            words = shlex.split(line, comments=True)
+            if len(words) == 2 and words[0] == 'export' and '=' in words[1]:
+                key, value = words[1].split('=', 1)
+                if key in allowed:
+                    if '$' in value or '`' in value:
+                        raise ValueError('Environment exports must be literal values')
+                    env[key] = value
+    if config.get('local_only'):
+        endpoint = urlsplit(env.get('ANTHROPIC_BASE_URL', ''))
+        try:
+            local = endpoint.hostname == 'localhost' or ipaddress.ip_address(endpoint.hostname).is_private
+        except ValueError:
+            local = False
+        if endpoint.scheme not in {'http', 'https'} or not local or endpoint.username or endpoint.password:
+            raise ValueError('Local-only runs require an explicit private-IP or localhost inference endpoint')
+        if not env.get('ANTHROPIC_MODEL'):
+            raise ValueError('Local-only runs require an explicit ANTHROPIC_MODEL')
+        for key in ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY',
+                    'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy'):
+            env.pop(key, None)
+        env['ANTHROPIC_API_KEY'] = env.get('ANTHROPIC_AUTH_TOKEN', 'local-inference')
+        env['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
+    env.pop('CLAUDECODE', None)
+    return env
+
+
 class Runner:
     def __init__(self, config, task, run_dir):
         self.config, self.task, self.directory = config, task, run_dir
         self.repo = Path(config['repository']).resolve()
-        self.env = dict(os.environ)
-        if config.get('node_bin'):
-            self.env['PATH'] = config['node_bin'] + os.pathsep + self.env['PATH']
-        # Read only explicitly named literal exports; never execute shell startup code.
-        env_file = config.get('environment_file')
-        if env_file:
-            allowed = set(config.get('environment_keys', []))
-            for line in Path(env_file).expanduser().read_text().splitlines():
-                words = shlex.split(line, comments=True)
-                if len(words) == 2 and words[0] == 'export' and '=' in words[1]:
-                    key, value = words[1].split('=', 1)
-                    if key in allowed:
-                        if '$' in value or '`' in value:
-                            raise ValueError('Environment exports must be literal values')
-                        self.env[key] = value
-        if config.get('local_only'):
-            endpoint = urlsplit(self.env.get('ANTHROPIC_BASE_URL', ''))
-            try:
-                local = endpoint.hostname == 'localhost' or ipaddress.ip_address(endpoint.hostname).is_private
-            except ValueError:
-                local = False
-            if endpoint.scheme not in {'http', 'https'} or not local or endpoint.username or endpoint.password:
-                raise ValueError('Local-only runs require an explicit private-IP or localhost inference endpoint')
-            if not self.env.get('ANTHROPIC_MODEL'):
-                raise ValueError('Local-only runs require an explicit ANTHROPIC_MODEL')
-            for key in ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY',
-                        'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy'):
-                self.env.pop(key, None)
-            self.env['ANTHROPIC_API_KEY'] = self.env.get('ANTHROPIC_AUTH_TOKEN', 'local-inference')
-            self.env['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
-        self.env.pop('CLAUDECODE', None)
+        self.env = model_environment(config)
         self.base = snapshot(self.repo)
         self.head = git(self.repo, 'rev-parse', 'HEAD')
         self.index = git(self.repo, 'diff', '--cached', '--binary')
@@ -373,12 +434,40 @@ class Runner:
                      '--model', self.env['ANTHROPIC_MODEL']]
         log = self.directory / (stem + '.json')
         self.state(persona, round=round_number)
-        code = run_process(argv, self.repo, log, self.time_limit(self.config['invocation_timeout_seconds']), self.env, prompt)
-        if code:
-            raise RuntimeError(f'{persona} exited {code}; see {log.name}')
-        envelope = parse_envelope(log.read_text())
-        if envelope.get('is_error') or not isinstance(envelope.get('result'), str):
-            raise RuntimeError(f'{persona} returned an error or no result')
+        process_options = {}
+        if self.config.get('local_only'):
+            probe_inference(self.env, self.time_limit(5))
+            failures = 0
+
+            def heartbeat(remaining):
+                nonlocal failures
+                if remaining <= 0:
+                    return
+                try:
+                    probe_inference(self.env, min(5, remaining), active=True)
+                except InferenceUnavailable:
+                    failures += 1
+                    if failures >= 2:
+                        raise
+                else:
+                    failures = 0
+
+            process_options['heartbeat'] = heartbeat
+        code = run_process(argv, self.repo, log, self.time_limit(self.config['invocation_timeout_seconds']),
+                           self.env, prompt, **process_options)
+        try:
+            envelope = parse_envelope(log.read_text())
+        except ValueError:
+            if code:
+                raise RuntimeError(f'{persona} exited {code}; see {log.name}') from None
+            raise
+        result = envelope.get('result')
+        if self.config.get('local_only') and envelope.get('is_error') and isinstance(result, str):
+            if any(token in result.lower() for token in ('econnrefused', 'econnreset', 'request timed out',
+                                                          'connection refused', 'connection reset')):
+                raise InferenceUnavailable(f'{persona} lost local inference; see {log.name}')
+        if code or envelope.get('is_error') or not isinstance(result, str):
+            raise RuntimeError(f'{persona} failed; see {log.name}')
         report = envelope['result']
         with (self.directory / 'invocations.jsonl').open('a') as metrics:
             metrics.write(json.dumps({'round': round_number, 'persona': persona,
@@ -589,7 +678,8 @@ def main():
             try:
                 (directory / 'interrupted.patch').write_bytes(patch(repo))
             finally:
-                runner.state('stopped', reason=str(error) or type(error).__name__)
+                runner.state('inference_unavailable' if isinstance(error, InferenceUnavailable) else 'stopped',
+                             reason=str(error) or type(error).__name__)
             return 1
 
 

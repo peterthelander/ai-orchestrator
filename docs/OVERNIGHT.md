@@ -38,6 +38,16 @@ accepted patches, failed checks and parked parent packets. Existing summaries
 prevent automatic replay after a supervisor crash. There is no automatic morning
 hosted invocation: ask Codex to inspect the saved report when ready.
 
+Local-only jobs probe the llama.cpp health endpoint before starting. Two failed
+preflight probes stop the batch before it creates another worktree. During model
+calls, the runner checks reachability about every 30 seconds and terminates the
+invocation after two consecutive failures. A busy HTTP 503 is tolerated while
+a request is active. Recognized CLI connection errors also stop the batch.
+The report records `paused_inference` and `pending-entries.json` contains the
+interrupted entry and the remaining entries. After recovery, use those entries
+with a new start, deadline, release times, and runtime snapshot in a fresh batch
+directory. The interrupted worktree and logs are retained.
+
 The computer running WSL and the inference laptop must remain powered, awake and
 reachable. User lingering keeps the Linux user manager alive after logout; it
 does not keep Windows running or wake a sleeping host.

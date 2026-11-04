@@ -24,7 +24,10 @@ and parent decisions. Do not read historical experiment reports during ordinary 
   a concise guide and mandatory checks, then run `doctor`. It verifies a fresh
   worktree with no model invocation. Configure dependency setup for fresh worktrees.
 - Use the user's existing Claude CLI/inference environment. Do not switch providers
-  or add hosted API calls. Report an unavailable local endpoint as an external blocker.
+  or add hosted API calls. For the llama.cpp endpoint, enable `local_only` in the profile.
+  If a queue pauses with `inference_unavailable`, preserve its pending entries and
+  confirm the endpoint is ready before starting a fresh bounded attempt. Report
+  continued unavailability as an external blocker.
 - Write a short outcome-based task with acceptance criteria and explicit allowed
   files. Specify required deliverables where useful. Narrow tasks that exceed the
   local model's context; avoid detailed implementation recipes unless needed.

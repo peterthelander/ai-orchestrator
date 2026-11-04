@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-from runner import ROOT, Runner, git
+from runner import ROOT, Runner, git, check_inference, InferenceUnavailable
 
 
 def home():
@@ -200,6 +200,7 @@ def run(args):
     task = read(args.task)
     if args.acceptance:
         config['acceptance_checks'] = config.get('acceptance_checks', []) + read(args.acceptance)
+    check_inference(config)
     job = create_job(config, task, args.profile, args.base)
     print('Run: ' + str(job), flush=True)
     try:
@@ -222,19 +223,28 @@ def queue(args):
     queue_dir.mkdir(parents=True)
     write(queue_dir / 'contract.json', {'config': config, 'tasks': tasks, 'base': revision})
     results = []
-    for task in tasks:
+    for index, task in enumerate(tasks):
         job = None
         try:
+            check_inference(config)
             job = create_job(config, task, args.profile, revision)
             setup(job)
             code = invoke_job(job)
             result = {**describe(job), 'exit_code': code}
+        except InferenceUnavailable as error:
+            result = {'task': task['id'], 'status': 'inference_unavailable', 'reason': str(error)}
         except Exception as error:
             result = {'task': task['id'], 'status': 'setup_or_launch_failed', 'reason': str(error)}
             if job:
                 write(job / 'failure.json', result)
                 result['run'] = str(job)
         results.append(result)
+        if result['status'] == 'inference_unavailable':
+            write(queue_dir / 'pending-tasks.json', tasks[index:])
+            results.extend({'task': pending['id'], 'status': 'not_run_inference'}
+                           for pending in tasks[index + 1:])
+            write(queue_dir / 'summary.json', results)
+            break
         write(queue_dir / 'summary.json', results)
     print(json.dumps({'queue': str(queue_dir), 'results': results}, indent=2))
     return 0 if all(r.get('status') == 'accepted' for r in results) else 1

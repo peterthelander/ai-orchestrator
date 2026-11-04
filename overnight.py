@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import time
 
+from runner import check_inference, InferenceUnavailable
 from orchestrator import create_job, describe, invoke_job, setup, validate, write
 
 
@@ -94,6 +95,7 @@ def execute(path):
         job = None
         try:
             config = dict(entry['config'], deadline_epoch=min(deadline, now + manifest['max_task_seconds']))
+            check_inference(config)
             job = create_job(config, entry['task'], entry['repository'], entry['base'])
             record['run'] = str(job)
             report(directory, manifest, results + [{**record, 'status': 'running'}], 'running')
@@ -103,12 +105,24 @@ def execute(path):
             record.update(status=summary['status'], exit_code=code,
                           **{k: summary[k] for k in ('patch', 'parent_packet', 'reason') if k in summary})
             # parent_required is parked; there is deliberately no automatic hosted continuation.
+        except InferenceUnavailable as error:
+            record.update(status='inference_unavailable', reason=str(error))
         except Exception as error:
             record.update(status='setup_or_launch_failed', reason=str(error))
             if job:
                 write(job / 'failure.json', record)
         record['finished_at'] = datetime.now(timezone.utc).isoformat()
         results.append(record)
+        if record['status'] == 'inference_unavailable':
+            finished = {result['entry_id'] for result in results}
+            pending = [entry for entry in manifest['entries']
+                       if entry['id'] not in finished or entry['id'] == record['entry_id']]
+            write(directory / 'pending-entries.json', pending)
+            results.extend({'entry_id': entry['id'], 'repository': entry['repository'],
+                            'task': entry['task']['id'], 'status': 'not_run_inference'}
+                           for entry in pending if entry['id'] != record['entry_id'])
+            report(directory, manifest, results, 'paused_inference')
+            return 1
         report(directory, manifest, results, 'running')
     report(directory, manifest, results, 'complete')
     return 0

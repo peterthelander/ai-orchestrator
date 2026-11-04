@@ -4,10 +4,11 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import overnight
 import runner
@@ -56,13 +57,45 @@ class OvernightTests(unittest.TestCase):
                 self.assertLessEqual(config['deadline_epoch'],time.time()+61)
                 seen.append(args);return jobs[len(seen)-1]
             def describe(job):return {'status':'parent_required' if job==jobs[0] else 'accepted'}
-            with patch.object(overnight,'create_job',side_effect=create),patch.object(overnight,'setup'),\
+            with patch.object(overnight,'check_inference'),patch.object(overnight,'create_job',side_effect=create),patch.object(overnight,'setup'),\
                  patch.object(overnight,'invoke_job',side_effect=[2,0]),patch.object(overnight,'describe',side_effect=describe):
                 self.assertEqual(overnight.execute(path),0)
             summary=json.loads((root/'summary.json').read_text())
             self.assertEqual([r['status'] for r in summary['results']],['parent_required','accepted'])
             self.assertFalse(summary['hosted_escalation_enabled'])
             with self.assertRaisesRegex(RuntimeError,'already started'):overnight.execute(path)
+
+    def test_outage_parks_remaining_entries_before_creating_worktrees(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest = self.manifest()
+            manifest['entries'].append(dict(manifest['entries'][0], id='b1', repository='b'))
+            path = root / 'manifest.json'
+            path.write_text(json.dumps(manifest))
+            with patch.object(overnight, 'check_inference', side_effect=runner.InferenceUnavailable('offline')), \
+                 patch.object(overnight, 'create_job') as create:
+                self.assertEqual(overnight.execute(path), 1)
+                create.assert_not_called()
+            summary = json.loads((root / 'summary.json').read_text())
+            self.assertEqual(summary['status'], 'paused_inference')
+            self.assertEqual([r['status'] for r in summary['results']],
+                             ['inference_unavailable', 'not_run_inference'])
+            self.assertEqual(json.loads((root / 'pending-entries.json').read_text()), manifest['entries'])
+
+    def test_outage_during_invocation_stops_other_repositories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest = self.manifest()
+            manifest['entries'].append(dict(manifest['entries'][0], id='b1', repository='b'))
+            path = root / 'manifest.json'
+            path.write_text(json.dumps(manifest))
+            with patch.object(overnight, 'check_inference'), \
+                 patch.object(overnight, 'create_job', return_value=root / 'job') as create, \
+                 patch.object(overnight, 'setup'), patch.object(overnight, 'invoke_job', return_value=1), \
+                 patch.object(overnight, 'describe', return_value={'status': 'inference_unavailable'}):
+                self.assertEqual(overnight.execute(path), 1)
+                create.assert_called_once()
+            self.assertEqual(len(json.loads((root / 'pending-entries.json').read_text())), 2)
 
     def test_deadline_marks_unattempted_work_without_launch(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -88,6 +121,21 @@ class LocalOnlyTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,'Local-only'):
                         runner.Runner(dict(obj.config,local_only=True),obj.task,obj.directory)
 
+    def test_heartbeat_abort_kills_process_group_without_resending_prompt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            child = Mock(pid=1234)
+            child.communicate.side_effect = subprocess.TimeoutExpired(['fake'], 30)
+            heartbeat = Mock(side_effect=[None, runner.InferenceUnavailable('offline')])
+            with patch.object(runner.subprocess, 'Popen', return_value=child), \
+                 patch.object(runner.os, 'killpg') as kill_group:
+                with self.assertRaises(runner.InferenceUnavailable):
+                    runner.run_process(['fake'], Path(temp), Path(temp) / 'output', 120,
+                                       {}, 'task prompt', heartbeat=heartbeat)
+            self.assertEqual([call.kwargs['input'] for call in child.communicate.call_args_list],
+                             [b'task prompt', None])
+            kill_group.assert_called_once_with(1234, runner.signal.SIGTERM)
+            child.wait.assert_called_once_with(timeout=5)
+
     def test_local_only_invocation_uses_bare_explicit_model_and_deadline(self):
         with tempfile.TemporaryDirectory() as temp,contextlib.redirect_stdout(io.StringIO()):
             obj=self.fixture(temp)
@@ -97,10 +145,11 @@ class LocalOnlyTests(unittest.TestCase):
                                         'CLAUDE_CODE_USE_BEDROCK':'1','HTTPS_PROXY':'http://proxy'}):
                 obj=runner.Runner(config,obj.task,obj.directory)
             captured=[]
-            def process(argv,cwd,output,timeout,env,prompt=None):
+            def process(argv,cwd,output,timeout,env,prompt=None,heartbeat=None):
                 captured.append((argv,timeout,env,prompt))
                 output.write_text(json.dumps({'type':'result','result':'report'}));return 0
-            with patch.object(runner,'run_process',side_effect=process):obj.invoke('reviewer',1,'Review')
+            with patch.object(runner,'probe_inference'), patch.object(runner,'run_process',side_effect=process):
+                obj.invoke('reviewer',1,'Review')
             argv,timeout,env,prompt=captured[0]
             self.assertIn('--bare',argv);self.assertIn('--disable-slash-commands',argv)
             self.assertEqual(argv[argv.index('--setting-sources')+1],'')
